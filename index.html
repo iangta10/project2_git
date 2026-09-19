@@ -56,6 +56,13 @@
         <label>Categoria<select id="itemCategory"></select></label>
         <label>Preço unitário (R$)<input id="itemPrice" inputmode="decimal" placeholder="0,00" /></label>
       </div>
+      <div class="grid2">
+        <label>Desconto total (R$)<input id="itemDiscount" inputmode="decimal" placeholder="0,00" /></label>
+        <div style="border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:10px 12px;display:grid;align-content:center;gap:3px">
+          <span style="font-size:12px;color:var(--muted);font-weight:700">Valor final</span>
+          <strong id="itemFinalPrice" style="font-size:18px">R$ 0,00</strong>
+        </div>
+      </div>
       <label>Observação<input id="itemNote" placeholder="Opcional" /></label>
       <label class="checkline"><input id="itemFavorite" type="checkbox" /> Marcar como favorito</label>
       <div class="dialog-actions">
