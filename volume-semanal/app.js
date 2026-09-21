@@ -252,6 +252,14 @@
       '<div class="modal-footer '+(isEdit?'':'single')+'">'+(isEdit?'<button class="btn danger" data-action="delete-workout" data-id="'+h(draftWorkout.id)+'">Excluir treino</button>':'')+'<button class="btn primary" data-action="save-workout">Salvar treino</button></div></div></div>';
   }
 
+  function rerenderWorkoutModalPreserveScroll(isEdit){
+    const currentModal=document.querySelector(".modal");
+    const scrollTop=currentModal?currentModal.scrollTop:0;
+    renderWorkoutModal(isEdit);
+    const nextModal=document.querySelector(".modal");
+    if(nextModal) nextModal.scrollTop=scrollTop;
+  }
+
   function syncDraftInputs(){
     const d=document.getElementById("draftDate"), t=document.getElementById("draftTitle");
     if(d) draftWorkout.date=d.value||todayISO();
@@ -322,7 +330,8 @@
 
     if(action==="add-entry" && draftWorkout){
       syncDraftInputs(); const g=activeGroups()[0];
-      draftWorkout.entries.push({id:uid(),exerciseName:"",muscleGroupId:g?g.id:"",sets:3}); renderWorkoutModal(state.workouts.some(w=>w.id===draftWorkout.id)); return;
+      draftWorkout.entries.push({id:uid(),exerciseName:"",muscleGroupId:g?g.id:"",sets:3});
+      rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id)); return;
     }
     if((action==="entry-minus"||action==="entry-plus"||action==="entry-duplicate"||action==="entry-delete")&&draftWorkout){
       syncDraftInputs(); const i=draftWorkout.entries.findIndex(x=>x.id===el.dataset.id); if(i<0)return;
@@ -330,7 +339,7 @@
       if(action==="entry-plus") draftWorkout.entries[i].sets=clampHalf(draftWorkout.entries[i].sets)+.5;
       if(action==="entry-duplicate"){ const cp=clone(draftWorkout.entries[i]); cp.id=uid(); draftWorkout.entries.splice(i+1,0,cp); }
       if(action==="entry-delete") draftWorkout.entries.splice(i,1);
-      renderWorkoutModal(state.workouts.some(w=>w.id===draftWorkout.id)); return;
+      rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id)); return;
     }
     if(action==="save-workout"){ saveWorkout(); return; }
     if(action==="delete-workout"){
