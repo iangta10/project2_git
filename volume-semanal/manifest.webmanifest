@@ -1,0 +1,18 @@
+{
+  "name": "Volume Semanal",
+  "short_name": "Volume",
+  "description": "Controle semanal de séries por grupamento muscular",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d0d0e",
+  "theme_color": "#111111",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
