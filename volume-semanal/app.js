@@ -254,10 +254,16 @@
 
   function rerenderWorkoutModalPreserveScroll(isEdit){
     const currentModal=document.querySelector(".modal");
-    const scrollTop=currentModal?currentModal.scrollTop:0;
+    const modalScroll=currentModal?currentModal.scrollTop:0;
+    const pageScroll=window.scrollY||document.documentElement.scrollTop||0;
     renderWorkoutModal(isEdit);
-    const nextModal=document.querySelector(".modal");
-    if(nextModal) nextModal.scrollTop=scrollTop;
+    const restore=()=>{
+      const nextModal=document.querySelector(".modal");
+      if(nextModal) nextModal.scrollTop=modalScroll;
+      window.scrollTo(0,pageScroll);
+    };
+    restore();
+    requestAnimationFrame(()=>{ restore(); requestAnimationFrame(restore); });
   }
 
   function syncDraftInputs(){
@@ -335,8 +341,17 @@
     }
     if((action==="entry-minus"||action==="entry-plus"||action==="entry-duplicate"||action==="entry-delete")&&draftWorkout){
       syncDraftInputs(); const i=draftWorkout.entries.findIndex(x=>x.id===el.dataset.id); if(i<0)return;
-      if(action==="entry-minus") draftWorkout.entries[i].sets=Math.max(0,clampHalf(draftWorkout.entries[i].sets)-.5);
-      if(action==="entry-plus") draftWorkout.entries[i].sets=clampHalf(draftWorkout.entries[i].sets)+.5;
+
+      if(action==="entry-minus"||action==="entry-plus"){
+        const delta=action==="entry-plus"?.5:-.5;
+        draftWorkout.entries[i].sets=Math.max(0,clampHalf(draftWorkout.entries[i].sets)+delta);
+        const input=document.querySelector('[data-entry-sets="'+CSS.escape(draftWorkout.entries[i].id)+'"]');
+        if(input) input.value=String(draftWorkout.entries[i].sets);
+        const total=document.getElementById("draftTotal");
+        if(total) total.textContent=fmt(workoutTotal(draftWorkout))+" séries";
+        return;
+      }
+
       if(action==="entry-duplicate"){ const cp=clone(draftWorkout.entries[i]); cp.id=uid(); draftWorkout.entries.splice(i+1,0,cp); }
       if(action==="entry-delete") draftWorkout.entries.splice(i,1);
       rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id)); return;
