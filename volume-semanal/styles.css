@@ -55,3 +55,26 @@ h1{font-size:24px;line-height:1.1;margin:3px 0 0}h2{font-size:17px;margin:0}h3{m
 hr{border:0;border-top:1px solid var(--border);margin:18px 0}
 .danger-zone{border-color:rgba(231,95,95,.35)}
 @media (min-width:600px){#content{padding:18px}.modal{border-radius:24px;margin-bottom:16px;max-height:88vh}.modal-backdrop{align-items:center}.topbar{padding-left:20px;padding-right:20px}}
+
+/* Multiple muscle groups inside one exercise */
+.exercise-name-input{font-weight:800;background:#1e1e22}
+.allocation-label{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 2px 7px;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.allocation-list{display:grid;gap:7px}
+.allocation-row{display:grid;grid-template-columns:minmax(0,1fr) 128px 36px;gap:7px;align-items:center}
+.allocation-group{min-width:0;min-height:42px;font-size:14px}
+.allocation-counter{display:grid;grid-template-columns:36px 1fr 36px;gap:4px;align-items:center}
+.allocation-counter button{height:42px;border:0;border-radius:10px;background:var(--panel2);font-size:18px;font-weight:900}
+.allocation-sets{min-width:0;min-height:42px;padding:0 4px;text-align:center;font-size:15px}
+.allocation-remove{width:36px;height:42px;border:0;border-radius:10px;background:rgba(231,95,95,.1);color:#ff9191;font-size:20px}
+.add-muscle-btn{width:100%;min-height:40px;margin-top:8px;border:1px dashed #3b3b42;border-radius:11px;background:transparent;color:var(--accent);font-weight:800}
+.exercise-actions{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.exercise-actions .entry-tools{width:100%;justify-content:flex-end}
+.exercise-actions .entry-tools button:first-child{color:#c9c9cf}
+.exercise-actions .entry-tools button:last-child{color:#ff9191}
+@media (max-width:480px){
+  .allocation-row{grid-template-columns:minmax(0,1fr) 118px 34px}
+  .allocation-counter{grid-template-columns:32px 1fr 32px}
+  .allocation-counter button{height:40px}
+  .allocation-remove{width:34px;height:40px}
+  .allocation-group,.allocation-sets{min-height:40px}
+}
