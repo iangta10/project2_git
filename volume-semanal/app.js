@@ -73,7 +73,7 @@
 
   function defaultState(){
     const groups=clone(DEFAULT_GROUPS);
-    return {version:2,muscleGroups:groups,workouts:[],goals:makeGoals(groups)};
+    return {version:3,muscleGroups:groups,workouts:[],goals:makeGoals(groups)};
   }
 
   function sanitizeState(raw){
@@ -84,10 +84,13 @@
     })) : clone(DEFAULT_GROUPS);
     let workouts = Array.isArray(raw.workouts) ? raw.workouts.map(w => ({
       id:String(w.id||uid()),date:String(w.date||todayISO()),title:w.title?String(w.title):"",
-      entries:Array.isArray(w.entries)?w.entries.map(e=>({
-        id:String(e.id||uid()),exerciseName:e.exerciseName?String(e.exerciseName):"",
-        muscleGroupId:String(e.muscleGroupId||""),sets:clampHalf(e.sets)
-      })).filter(e=>e.muscleGroupId&&e.sets>0):[],
+      entries:Array.isArray(w.entries)?w.entries.map(e=>{
+        const entryId=String(e.id||uid());
+        return {
+          id:entryId,exerciseKey:String(e.exerciseKey||entryId),exerciseName:e.exerciseName?String(e.exerciseName):"",
+          muscleGroupId:String(e.muscleGroupId||""),sets:clampHalf(e.sets)
+        };
+      }).filter(e=>e.muscleGroupId&&e.sets>0):[],
       createdAt:w.createdAt||new Date().toISOString(),updatedAt:w.updatedAt||new Date().toISOString()
     })) : [];
     let goals;
@@ -100,7 +103,7 @@
     }else{
       goals=makeGoals(groups);
     }
-    return {version:2,muscleGroups:groups,workouts:workouts,goals:goals};
+    return {version:3,muscleGroups:groups,workouts:workouts,goals:goals};
   }
 
   function loadState(){
@@ -123,6 +126,16 @@
   function activeGroups(){ return state.muscleGroups.filter(g=>!g.hidden).sort((a,b)=>a.order-b.order); }
   function weekWorkouts(ws){ return state.workouts.filter(w=>weekStartOf(w.date)===ws).sort((a,b)=>a.date.localeCompare(b.date)); }
   function workoutTotal(w){ return w.entries.reduce((s,e)=>s+clampHalf(e.sets),0); }
+  function workoutExerciseCount(w){ return new Set(w.entries.map(e=>e.exerciseKey||e.id)).size; }
+  function exerciseBlocks(w){
+    const map=new Map();
+    w.entries.forEach(e=>{
+      const key=e.exerciseKey||e.id;
+      if(!map.has(key)) map.set(key,{key:key,exerciseName:e.exerciseName||"",entries:[]});
+      map.get(key).entries.push(e);
+    });
+    return [...map.values()];
+  }
   function totalSets(list){ return list.reduce((s,w)=>s+workoutTotal(w),0); }
   function goalTotal(goal,list){
     const ids=new Set(goal.sourceIds||[]);
@@ -177,7 +190,7 @@
       const date=addDays(ws,i), list=state.workouts.filter(w=>w.date===date), d=parseISO(date);
       html+='<div class="day-card"><div class="day-head"><div class="day-date"><div class="day-badge"><b>'+d.getDate()+'</b><small>'+dayName(date)+'</small></div><div><h3>'+dayName(date)+'</h3><div class="tiny muted">'+longDate(date)+'</div></div></div><button class="icon-btn" data-action="new-workout" data-date="'+date+'">＋</button></div>';
       if(list.length){
-        list.forEach(w=>{ html+='<div class="workout-mini" data-action="edit-workout" data-id="'+h(w.id)+'"><div><b>'+h(w.title||"Treino")+'</b><div class="tiny muted">'+w.entries.length+' lançamentos</div></div><div class="strong accent">'+fmt(workoutTotal(w))+' séries</div></div>'; });
+        list.forEach(w=>{ html+='<div class="workout-mini" data-action="edit-workout" data-id="'+h(w.id)+'"><div><b>'+h(w.title||"Treino")+'</b><div class="tiny muted">'+workoutExerciseCount(w)+' '+(workoutExerciseCount(w)===1?'exercício':'exercícios')+'</div></div><div class="strong accent">'+fmt(workoutTotal(w))+' séries</div></div>'; });
       }else html+='<div class="tiny muted" style="padding-top:10px">Nenhum treino registrado.</div>';
       html+='</div>';
     }
@@ -227,19 +240,32 @@
     const first=activeGroups()[0];
     draftWorkout=existing?clone(existing):{
       id:uid(),date:date||todayISO(),title:"",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
-      entries:[{id:uid(),exerciseName:"",muscleGroupId:first?first.id:"",sets:3}]
+      entries:(()=>{ const key=uid(); return [{id:uid(),exerciseKey:key,exerciseName:"",muscleGroupId:first?first.id:"",sets:3}]; })()
     };
     renderWorkoutModal(!!existing);
   }
 
-  function entryHtml(e){
+  function allocationHtml(e){
     const groups=activeGroups();
-    return '<div class="entry-card" data-entry="'+h(e.id)+'">'+
-      '<input class="input" placeholder="Exercício (opcional)" value="'+h(e.exerciseName||"")+'" data-entry-exercise="'+h(e.id)+'">'+
-      '<div class="entry-grid"><select class="select" data-entry-group="'+h(e.id)+'">'+groups.map(g=>'<option value="'+h(g.id)+'" '+(g.id===e.muscleGroupId?'selected':'')+'>'+h(g.name)+'</option>').join("")+'</select>'+
-      '<input class="input" inputmode="decimal" step="0.5" min="0" value="'+fmt(e.sets).replace(",",".")+'" data-entry-sets="'+h(e.id)+'"></div>'+
-      '<div class="entry-actions"><div class="stepper"><button data-action="entry-minus" data-id="'+h(e.id)+'">−</button><button data-action="entry-plus" data-id="'+h(e.id)+'">＋</button></div>'+
-      '<div class="entry-tools"><button data-action="entry-duplicate" data-id="'+h(e.id)+'">Duplicar</button><button data-action="entry-delete" data-id="'+h(e.id)+'">Excluir</button></div></div></div>';
+    return '<div class="allocation-row" data-allocation="'+h(e.id)+'">'+
+      '<select class="select allocation-group" data-entry-group="'+h(e.id)+'">'+groups.map(g=>'<option value="'+h(g.id)+'" '+(g.id===e.muscleGroupId?'selected':'')+'>'+h(g.name)+'</option>').join("")+'</select>'+
+      '<div class="allocation-counter"><button data-action="entry-minus" data-id="'+h(e.id)+'">−</button>'+
+      '<input class="input allocation-sets" inputmode="decimal" step="0.5" min="0" value="'+fmt(e.sets).replace(",",".")+'" data-entry-sets="'+h(e.id)+'">'+
+      '<button data-action="entry-plus" data-id="'+h(e.id)+'">＋</button></div>'+
+      '<button class="allocation-remove" data-action="allocation-delete" data-id="'+h(e.id)+'" aria-label="Remover grupamento">×</button>'+
+      '</div>';
+  }
+
+  function entryHtml(block){
+    return '<div class="entry-card" data-exercise-key="'+h(block.key)+'">'+
+      '<input class="input exercise-name-input" placeholder="Nome do exercício (opcional)" value="'+h(block.exerciseName||"")+'" data-exercise-name="'+h(block.key)+'">'+
+      '<div class="allocation-label"><span>Grupamentos e séries</span><span class="tiny muted">'+block.entries.length+' '+(block.entries.length===1?'grupamento':'grupamentos')+'</span></div>'+
+      '<div class="allocation-list">'+block.entries.map(allocationHtml).join("")+'</div>'+
+      '<button class="add-muscle-btn" data-action="add-allocation" data-key="'+h(block.key)+'">＋ Adicionar grupamento</button>'+
+      '<div class="entry-actions exercise-actions"><div></div><div class="entry-tools">'+
+      '<button data-action="entry-duplicate" data-key="'+h(block.key)+'">Duplicar exercício</button>'+
+      '<button data-action="entry-delete" data-key="'+h(block.key)+'">Excluir exercício</button>'+
+      '</div></div></div>';
   }
 
   function renderWorkoutModal(isEdit){
@@ -247,8 +273,8 @@
       '<div class="field"><label>Data</label><input class="input" type="date" id="draftDate" value="'+h(draftWorkout.date)+'"></div>'+
       '<div class="field"><label>Nome do treino (opcional)</label><input class="input" id="draftTitle" placeholder="Ex.: Push A" value="'+h(draftWorkout.title||"")+'"></div>'+
       '<div class="section-head"><h3>Séries contabilizadas</h3><b class="accent" id="draftTotal">'+fmt(workoutTotal(draftWorkout))+' séries</b></div>'+
-      '<div id="entryList">'+draftWorkout.entries.map(entryHtml).join("")+'</div>'+
-      '<button class="btn" style="width:100%" data-action="add-entry">＋ Adicionar linha</button>'+
+      '<div id="entryList">'+exerciseBlocks(draftWorkout).map(entryHtml).join("")+'</div>'+
+      '<button class="btn" style="width:100%" data-action="add-entry">＋ Adicionar exercício</button>'+
       '<div class="modal-footer '+(isEdit?'':'single')+'">'+(isEdit?'<button class="btn danger" data-action="delete-workout" data-id="'+h(draftWorkout.id)+'">Excluir treino</button>':'')+'<button class="btn primary" data-action="save-workout">Salvar treino</button></div></div></div>';
   }
 
@@ -270,11 +296,17 @@
     const d=document.getElementById("draftDate"), t=document.getElementById("draftTitle");
     if(d) draftWorkout.date=d.value||todayISO();
     if(t) draftWorkout.title=t.value.trim();
+
+    exerciseBlocks(draftWorkout).forEach(block=>{
+      const ex=document.querySelector('[data-exercise-name="'+CSS.escape(block.key)+'"]');
+      if(ex){
+        draftWorkout.entries.filter(e=>(e.exerciseKey||e.id)===block.key).forEach(e=>e.exerciseName=ex.value);
+      }
+    });
+
     draftWorkout.entries.forEach(e=>{
-      const ex=document.querySelector('[data-entry-exercise="'+CSS.escape(e.id)+'"]');
       const gr=document.querySelector('[data-entry-group="'+CSS.escape(e.id)+'"]');
       const st=document.querySelector('[data-entry-sets="'+CSS.escape(e.id)+'"]');
-      if(ex) e.exerciseName=ex.value;
       if(gr) e.muscleGroupId=gr.value;
       if(st) e.sets=clampHalf(st.value);
     });
@@ -309,7 +341,7 @@
   }
 
   function exportBackup(){
-    const data={app:"volume-semanal-github",version:2,exportedAt:new Date().toISOString(),muscleGroups:state.muscleGroups,workouts:state.workouts,goals:state.goals};
+    const data={app:"volume-semanal-github",version:3,exportedAt:new Date().toISOString(),muscleGroups:state.muscleGroups,workouts:state.workouts,goals:state.goals};
     const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
     const url=URL.createObjectURL(blob), a=document.createElement("a");
     a.href=url; a.download="volume-semanal-backup-"+todayISO()+".json"; a.click(); URL.revokeObjectURL(url);
@@ -335,25 +367,52 @@
     if(action==="history-edit-workout"){ const id=el.dataset.id; closeModal(); openWorkout(id); return; }
 
     if(action==="add-entry" && draftWorkout){
-      syncDraftInputs(); const g=activeGroups()[0];
-      draftWorkout.entries.push({id:uid(),exerciseName:"",muscleGroupId:g?g.id:"",sets:3});
+      syncDraftInputs(); const g=activeGroups()[0], key=uid();
+      draftWorkout.entries.push({id:uid(),exerciseKey:key,exerciseName:"",muscleGroupId:g?g.id:"",sets:3});
       rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id)); return;
     }
-    if((action==="entry-minus"||action==="entry-plus"||action==="entry-duplicate"||action==="entry-delete")&&draftWorkout){
+
+    if(action==="add-allocation" && draftWorkout){
+      syncDraftInputs();
+      const key=el.dataset.key;
+      const block=exerciseBlocks(draftWorkout).find(b=>b.key===key); if(!block)return;
+      const used=new Set(block.entries.map(x=>x.muscleGroupId));
+      const group=activeGroups().find(g=>!used.has(g.id))||activeGroups()[0];
+      const name=block.exerciseName||"";
+      draftWorkout.entries.push({id:uid(),exerciseKey:key,exerciseName:name,muscleGroupId:group?group.id:"",sets:3});
+      rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id)); return;
+    }
+
+    if(action==="allocation-delete" && draftWorkout){
+      syncDraftInputs();
+      const item=draftWorkout.entries.find(x=>x.id===el.dataset.id); if(!item)return;
+      const key=item.exerciseKey||item.id;
+      const same=draftWorkout.entries.filter(x=>(x.exerciseKey||x.id)===key);
+      if(same.length<=1){ toast("O exercício precisa ter ao menos um grupamento."); return; }
+      draftWorkout.entries=draftWorkout.entries.filter(x=>x.id!==el.dataset.id);
+      rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id)); return;
+    }
+
+    if((action==="entry-minus"||action==="entry-plus")&&draftWorkout){
       syncDraftInputs(); const i=draftWorkout.entries.findIndex(x=>x.id===el.dataset.id); if(i<0)return;
+      const delta=action==="entry-plus"?.5:-.5;
+      draftWorkout.entries[i].sets=Math.max(0,clampHalf(draftWorkout.entries[i].sets)+delta);
+      const input=document.querySelector('[data-entry-sets="'+CSS.escape(draftWorkout.entries[i].id)+'"]');
+      if(input) input.value=String(draftWorkout.entries[i].sets);
+      const total=document.getElementById("draftTotal");
+      if(total) total.textContent=fmt(workoutTotal(draftWorkout))+" séries";
+      return;
+    }
 
-      if(action==="entry-minus"||action==="entry-plus"){
-        const delta=action==="entry-plus"?.5:-.5;
-        draftWorkout.entries[i].sets=Math.max(0,clampHalf(draftWorkout.entries[i].sets)+delta);
-        const input=document.querySelector('[data-entry-sets="'+CSS.escape(draftWorkout.entries[i].id)+'"]');
-        if(input) input.value=String(draftWorkout.entries[i].sets);
-        const total=document.getElementById("draftTotal");
-        if(total) total.textContent=fmt(workoutTotal(draftWorkout))+" séries";
-        return;
+    if((action==="entry-duplicate"||action==="entry-delete")&&draftWorkout){
+      syncDraftInputs(); const key=el.dataset.key;
+      const block=exerciseBlocks(draftWorkout).find(b=>b.key===key); if(!block)return;
+      if(action==="entry-duplicate"){
+        const newKey=uid();
+        const copies=block.entries.map(e=>({...clone(e),id:uid(),exerciseKey:newKey}));
+        draftWorkout.entries.push(...copies);
       }
-
-      if(action==="entry-duplicate"){ const cp=clone(draftWorkout.entries[i]); cp.id=uid(); draftWorkout.entries.splice(i+1,0,cp); }
-      if(action==="entry-delete") draftWorkout.entries.splice(i,1);
+      if(action==="entry-delete") draftWorkout.entries=draftWorkout.entries.filter(e=>(e.exerciseKey||e.id)!==key);
       rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id)); return;
     }
     if(action==="save-workout"){ saveWorkout(); return; }
@@ -403,7 +462,10 @@
     if(!draftWorkout) return;
     if(t.id==="draftTitle"){ draftWorkout.title=t.value; return; }
     if(t.id==="draftDate"){ draftWorkout.date=t.value; return; }
-    if(t.matches("[data-entry-exercise]")){ const x=draftWorkout.entries.find(y=>y.id===t.dataset.entryExercise); if(x)x.exerciseName=t.value; return; }
+    if(t.matches("[data-exercise-name]")){
+      draftWorkout.entries.filter(y=>(y.exerciseKey||y.id)===t.dataset.exerciseName).forEach(x=>x.exerciseName=t.value);
+      return;
+    }
     if(t.matches("[data-entry-sets]")){
       const x=draftWorkout.entries.find(y=>y.id===t.dataset.entrySets); if(x){x.sets=clampHalf(t.value);const total=document.getElementById("draftTotal");if(total)total.textContent=fmt(workoutTotal(draftWorkout))+" séries";} return;
     }
