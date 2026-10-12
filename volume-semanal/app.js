@@ -30,9 +30,36 @@
     {id:"goal-abductors",name:"Abdutores",target:6,visible:false,aliases:["Abdutores"]}
   ];
 
+  const DEFAULT_EXERCISES = [
+    {id:"ex-supino-maquina",name:"Supino máquina",allocations:[["chest",3],["triceps",1.5],["delt-front",1]]},
+    {id:"ex-supino-reto",name:"Supino reto — barra",allocations:[["chest",3],["triceps",1.5],["delt-front",1]]},
+    {id:"ex-supino-inclinado",name:"Supino inclinado — halteres",allocations:[["chest",3],["delt-front",1.5],["triceps",1]]},
+    {id:"ex-crucifixo-maquina",name:"Crucifixo — máquina",allocations:[["chest",3]]},
+    {id:"ex-desenvolvimento-maquina",name:"Desenvolvimento — máquina",allocations:[["delt-front",3],["triceps",1.5]]},
+    {id:"ex-elevacao-lateral",name:"Elevação lateral — halteres",allocations:[["delt-side",3]]},
+    {id:"ex-crucifixo-inverso",name:"Crucifixo inverso — máquina",allocations:[["delt-rear",3]]},
+    {id:"ex-face-pull",name:"Face pull — polia",allocations:[["delt-rear",3],["back",1]]},
+    {id:"ex-puxada-aberta",name:"Puxada aberta — máquina articulada",allocations:[["back",3],["biceps",1.5]]},
+    {id:"ex-remada-baixa",name:"Remada baixa — pegada pronada",allocations:[["back",3],["biceps",1.5]]},
+    {id:"ex-remada-aberta",name:"Remada aberta — máquina",allocations:[["back",3],["delt-rear",1.5]]},
+    {id:"ex-rosca-direta",name:"Rosca direta",allocations:[["biceps",3]]},
+    {id:"ex-rosca-alternada",name:"Rosca alternada — halteres",allocations:[["biceps",3]]},
+    {id:"ex-triceps-frances",name:"Tríceps francês — halter",allocations:[["triceps",3]]},
+    {id:"ex-triceps-polia",name:"Tríceps polia — barra W",allocations:[["triceps",3]]},
+    {id:"ex-agachamento",name:"Agachamento livre",allocations:[["quads",3],["glutes",1.5]]},
+    {id:"ex-leg-press",name:"Leg press 45°",allocations:[["quads",3],["glutes",1.5]]},
+    {id:"ex-extensora",name:"Cadeira extensora",allocations:[["quads",3]]},
+    {id:"ex-flexora",name:"Mesa flexora",allocations:[["hamstrings",3]]},
+    {id:"ex-stiff",name:"Stiff / RDL",allocations:[["hamstrings",3],["glutes",1.5]]},
+    {id:"ex-elevacao-pelvica",name:"Elevação pélvica",allocations:[["glutes",3],["hamstrings",1]]},
+    {id:"ex-panturrilha",name:"Panturrilha em pé",allocations:[["calves",3]]},
+    {id:"ex-abdominal",name:"Abdominal — máquina",allocations:[["core",3]]}
+  ].map((e,i)=>({id:e.id,name:e.name,order:i,allocations:e.allocations.map(a=>({muscleGroupId:a[0],sets:a[1]}))}));
+
   let state = loadState();
   let route = getRoute();
   let draftWorkout = null;
+  let draftExercise = null;
   let toastTimer = null;
 
   function clone(v){ return JSON.parse(JSON.stringify(v)); }
@@ -73,7 +100,7 @@
 
   function defaultState(){
     const groups=clone(DEFAULT_GROUPS);
-    return {version:3,muscleGroups:groups,workouts:[],goals:makeGoals(groups)};
+    return {version:4,muscleGroups:groups,workouts:[],goals:makeGoals(groups),exerciseLibrary:clone(DEFAULT_EXERCISES)};
   }
 
   function sanitizeState(raw){
@@ -103,7 +130,17 @@
     }else{
       goals=makeGoals(groups);
     }
-    return {version:3,muscleGroups:groups,workouts:workouts,goals:goals};
+    let exerciseLibrary;
+    if(Array.isArray(raw.exerciseLibrary)){
+      exerciseLibrary=raw.exerciseLibrary.map((e,i)=>({
+        id:String(e.id||uid()),name:String(e.name||"Exercício"),
+        order:Number.isFinite(Number(e.order))?Number(e.order):i,
+        allocations:Array.isArray(e.allocations)?e.allocations.map(a=>({
+          muscleGroupId:String(a.muscleGroupId||""),sets:clampHalf(a.sets)
+        })).filter(a=>a.muscleGroupId&&a.sets>0):[]
+      })).filter(e=>e.name&&e.allocations.length);
+    }else exerciseLibrary=clone(DEFAULT_EXERCISES);
+    return {version:4,muscleGroups:groups,workouts:workouts,goals:goals,exerciseLibrary:exerciseLibrary};
   }
 
   function loadState(){
@@ -124,6 +161,9 @@
   function setRoute(r){ location.hash="#"+r; }
   function groupById(id){ return state.muscleGroups.find(g=>g.id===id); }
   function activeGroups(){ return state.muscleGroups.filter(g=>!g.hidden).sort((a,b)=>a.order-b.order); }
+  function libraryExercises(){ return [...(state.exerciseLibrary||[])].sort((a,b)=>(a.order||0)-(b.order||0)||a.name.localeCompare(b.name,"pt-BR")); }
+  function libraryExerciseByName(name){ return libraryExercises().find(e=>norm(e.name)===norm(name)); }
+  function libraryExerciseById(id){ return (state.exerciseLibrary||[]).find(e=>e.id===id); }
   function weekWorkouts(ws){ return state.workouts.filter(w=>weekStartOf(w.date)===ws).sort((a,b)=>a.date.localeCompare(b.date)); }
   function workoutTotal(w){ return w.entries.reduce((s,e)=>s+clampHalf(e.sets),0); }
   function workoutExerciseCount(w){ return new Set(w.entries.map(e=>e.exerciseKey||e.id)).size; }
@@ -226,7 +266,11 @@
         '<label class="switch" title="Mostrar no painel"><input type="checkbox" data-goal-visible="'+h(g.id)+'" '+(g.visible?'checked':'')+'><span class="slider"></span></label></div></div>'+
         '<div class="setting-line" style="margin-top:8px"><span class="tiny muted">'+(g.visible?'Visível no painel':'Oculto do painel')+'</span><div class="setting-actions"><button class="move-btn" data-action="move-goal" data-id="'+h(g.id)+'" data-dir="-1" '+(i===0?'disabled':'')+'>↑</button><button class="move-btn" data-action="move-goal" data-id="'+h(g.id)+'" data-dir="1" '+(i===goals.length-1?'disabled':'')+'>↓</button></div></div></div>'
       ).join("")+'</div></section>'+
-      '<section class="section"><div class="section-head"><div><h2>Grupamentos detalhados</h2><div class="tiny muted">Usados no lançamento dos treinos.</div></div><button class="btn small" data-action="add-group">＋ Novo</button></div>'+
+      '<section class="section"><div class="section-head"><div><h2>Biblioteca de exercícios</h2><div class="tiny muted">Exercícios pré-configurados com grupamentos e volume inicial.</div></div><button class="btn small" data-action="add-library-exercise">＋ Novo</button></div>'+
+      '<div class="settings-list">'+libraryExercises().map(ex=>
+        '<div class="setting-row library-exercise-row"><div class="setting-line"><div><b>'+h(ex.name)+'</b><div class="pills">'+ex.allocations.map(a=>{const g=groupById(a.muscleGroupId);return '<span class="pill">'+h(g?g.name:"Removido")+' '+fmt(a.sets)+'</span>';}).join("")+'</div></div>'+
+        '<div class="setting-actions"><button class="move-btn library-edit-btn" data-action="edit-library-exercise" data-id="'+h(ex.id)+'">✎</button><button class="move-btn library-delete-btn" data-action="delete-library-exercise" data-id="'+h(ex.id)+'">×</button></div></div></div>'
+      ).join("")+'</div></section>'+      '<section class="section"><div class="section-head"><div><h2>Grupamentos detalhados</h2><div class="tiny muted">Usados no lançamento dos treinos.</div></div><button class="btn small" data-action="add-group">＋ Novo</button></div>'+
       '<div class="settings-list">'+groups.map((g,i)=>
         '<div class="setting-row"><div class="setting-line"><input class="input" style="min-height:42px" value="'+h(g.name)+'" data-group-name="'+h(g.id)+'"><label class="switch"><input type="checkbox" data-group-visible="'+h(g.id)+'" '+(!g.hidden?'checked':'')+'><span class="slider"></span></label></div>'+
         '<div class="setting-line" style="margin-top:8px"><span class="tiny muted">'+(g.hidden?'Oculto no registro':'Disponível no registro')+'</span><div class="setting-actions"><button class="move-btn" data-action="move-group" data-id="'+h(g.id)+'" data-dir="-1" '+(i===0?'disabled':'')+'>↑</button><button class="move-btn" data-action="move-group" data-id="'+h(g.id)+'" data-dir="1" '+(i===groups.length-1?'disabled':'')+'>↓</button>'+(g.isDefault?'':'<button class="move-btn" data-action="delete-group" data-id="'+h(g.id)+'">×</button>')+'</div></div></div>'
@@ -258,7 +302,7 @@
 
   function entryHtml(block){
     return '<div class="entry-card" data-exercise-key="'+h(block.key)+'">'+
-      '<input class="input exercise-name-input" placeholder="Nome do exercício (opcional)" value="'+h(block.exerciseName||"")+'" data-exercise-name="'+h(block.key)+'">'+
+      '<input class="input exercise-name-input" list="exerciseLibraryOptions" placeholder="Digite ou escolha um exercício" autocomplete="off" value="'+h(block.exerciseName||"")+'" data-exercise-name="'+h(block.key)+'">'+
       '<div class="allocation-label"><span>Grupamentos e séries</span><span class="tiny muted">'+block.entries.length+' '+(block.entries.length===1?'grupamento':'grupamentos')+'</span></div>'+
       '<div class="allocation-list">'+block.entries.map(allocationHtml).join("")+'</div>'+
       '<button class="add-muscle-btn" data-action="add-allocation" data-key="'+h(block.key)+'">＋ Adicionar grupamento</button>'+
@@ -269,10 +313,12 @@
   }
 
   function renderWorkoutModal(isEdit){
+    const exerciseOptions=libraryExercises().map(e=>'<option value="'+h(e.name)+'"></option>').join("");
     modalRoot.innerHTML='<div class="modal-backdrop"><div class="modal"><div class="modal-head"><div><div class="eyebrow">'+(isEdit?'EDITAR':'NOVO')+'</div><h2>Treino</h2></div><button class="close-btn" data-action="close-modal">×</button></div>'+
       '<div class="field"><label>Data</label><input class="input" type="date" id="draftDate" value="'+h(draftWorkout.date)+'"></div>'+
       '<div class="field"><label>Nome do treino (opcional)</label><input class="input" id="draftTitle" placeholder="Ex.: Push A" value="'+h(draftWorkout.title||"")+'"></div>'+
       '<div class="section-head"><h3>Séries contabilizadas</h3><b class="accent" id="draftTotal">'+fmt(workoutTotal(draftWorkout))+' séries</b></div>'+
+      '<datalist id="exerciseLibraryOptions">'+exerciseOptions+'</datalist>'+
       '<div id="entryList">'+exerciseBlocks(draftWorkout).map(entryHtml).join("")+'</div>'+
       '<button class="btn" style="width:100%" data-action="add-entry">＋ Adicionar exercício</button>'+
       '<div class="modal-footer '+(isEdit?'':'single')+'">'+(isEdit?'<button class="btn danger" data-action="delete-workout" data-id="'+h(draftWorkout.id)+'">Excluir treino</button>':'')+'<button class="btn primary" data-action="save-workout">Salvar treino</button></div></div></div>';
@@ -290,6 +336,20 @@
     };
     restore();
     requestAnimationFrame(()=>{ restore(); requestAnimationFrame(restore); });
+  }
+
+  function applyExerciseTemplate(exerciseKey,template){
+    if(!draftWorkout||!template) return false;
+    syncDraftInputs();
+    const indices=[];
+    draftWorkout.entries.forEach((e,i)=>{ if((e.exerciseKey||e.id)===exerciseKey) indices.push(i); });
+    if(!indices.length) return false;
+    const fresh=(template.allocations||[]).filter(a=>groupById(a.muscleGroupId)&&clampHalf(a.sets)>0).map(a=>({
+      id:uid(),exerciseKey:exerciseKey,exerciseName:template.name,muscleGroupId:a.muscleGroupId,sets:clampHalf(a.sets)
+    }));
+    if(!fresh.length) return false;
+    draftWorkout.entries.splice(indices[0],indices.length,...fresh);
+    return true;
   }
 
   function syncDraftInputs(){
@@ -322,7 +382,66 @@
     saveState(); closeModal(); render(); toast("Treino salvo.");
   }
 
-  function closeModal(){ modalRoot.innerHTML=""; draftWorkout=null; }
+  function closeModal(){ modalRoot.innerHTML=""; draftWorkout=null; draftExercise=null; }
+
+  function libraryAllocationHtml(a){
+    const groups=activeGroups();
+    return '<div class="allocation-row library-allocation-row">'+
+      '<select class="select allocation-group" data-lib-group="'+h(a.id)+'">'+groups.map(g=>'<option value="'+h(g.id)+'" '+(g.id===a.muscleGroupId?'selected':'')+'>'+h(g.name)+'</option>').join("")+'</select>'+
+      '<div class="allocation-counter"><button data-action="lib-minus" data-id="'+h(a.id)+'">−</button>'+
+      '<input class="input allocation-sets" inputmode="decimal" step="0.5" min="0" value="'+fmt(a.sets).replace(",",".")+'" data-lib-sets="'+h(a.id)+'">'+
+      '<button data-action="lib-plus" data-id="'+h(a.id)+'">＋</button></div>'+
+      '<button class="allocation-remove" data-action="lib-delete-allocation" data-id="'+h(a.id)+'">×</button></div>';
+  }
+
+  function openExerciseEditor(id){
+    const existing=id?libraryExerciseById(id):null, first=activeGroups()[0];
+    draftExercise=existing?{
+      id:existing.id,name:existing.name,order:existing.order,
+      allocations:existing.allocations.map(a=>({id:uid(),muscleGroupId:a.muscleGroupId,sets:a.sets}))
+    }:{id:uid(),name:"",order:(state.exerciseLibrary||[]).length,allocations:[{id:uid(),muscleGroupId:first?first.id:"",sets:3}]};
+    renderExerciseEditorModal(!!existing);
+  }
+
+  function renderExerciseEditorModal(isEdit){
+    modalRoot.innerHTML='<div class="modal-backdrop"><div class="modal"><div class="modal-head"><div><div class="eyebrow">'+(isEdit?'EDITAR':'NOVO')+'</div><h2>Exercício da biblioteca</h2></div><button class="close-btn" data-action="close-modal">×</button></div>'+
+      '<div class="field"><label>Nome do exercício</label><input class="input" id="libraryExerciseName" placeholder="Ex.: Supino inclinado" value="'+h(draftExercise.name||"")+'"></div>'+
+      '<div class="section-head"><div><h3>Grupamentos padrão</h3><div class="tiny muted">Esse volume é só o ponto de partida e pode ser alterado no treino.</div></div></div>'+
+      '<div>'+draftExercise.allocations.map(libraryAllocationHtml).join("")+'</div>'+
+      '<button class="btn" style="width:100%" data-action="lib-add-allocation">＋ Adicionar grupamento</button>'+
+      '<div class="modal-footer single"><button class="btn primary" data-action="save-library-exercise">Salvar exercício</button></div></div></div>';
+  }
+
+  function syncDraftExercise(){
+    if(!draftExercise) return;
+    const n=document.getElementById("libraryExerciseName"); if(n) draftExercise.name=n.value.trim();
+    draftExercise.allocations.forEach(a=>{
+      const g=document.querySelector('[data-lib-group="'+CSS.escape(a.id)+'"]');
+      const s=document.querySelector('[data-lib-sets="'+CSS.escape(a.id)+'"]');
+      if(g) a.muscleGroupId=g.value;
+      if(s) a.sets=clampHalf(s.value);
+    });
+  }
+
+  function rerenderExerciseEditorPreserveScroll(isEdit){
+    const current=document.querySelector(".modal"), top=current?current.scrollTop:0;
+    renderExerciseEditorModal(isEdit);
+    const next=document.querySelector(".modal"); if(next) next.scrollTop=top;
+  }
+
+  function saveLibraryExercise(){
+    syncDraftExercise();
+    if(!draftExercise.name){ toast("Digite o nome do exercício."); return; }
+    draftExercise.allocations=draftExercise.allocations.filter(a=>a.muscleGroupId&&clampHalf(a.sets)>0);
+    if(!draftExercise.allocations.length){ toast("Adicione ao menos um grupamento."); return; }
+    const duplicate=(state.exerciseLibrary||[]).find(e=>e.id!==draftExercise.id&&norm(e.name)===norm(draftExercise.name));
+    if(duplicate){ toast("Já existe um exercício com esse nome."); return; }
+    const clean={id:draftExercise.id,name:draftExercise.name,order:draftExercise.order,
+      allocations:draftExercise.allocations.map(a=>({muscleGroupId:a.muscleGroupId,sets:clampHalf(a.sets)}))};
+    const idx=(state.exerciseLibrary||[]).findIndex(e=>e.id===clean.id);
+    if(idx>=0) state.exerciseLibrary[idx]=clean; else state.exerciseLibrary.push(clean);
+    saveState(); closeModal(); renderSettings(); toast("Exercício salvo na biblioteca.");
+  }
 
   function openHistory(ws){
     const list=weekWorkouts(ws), goals=visibleGoals();
@@ -341,7 +460,7 @@
   }
 
   function exportBackup(){
-    const data={app:"volume-semanal-github",version:3,exportedAt:new Date().toISOString(),muscleGroups:state.muscleGroups,workouts:state.workouts,goals:state.goals};
+    const data={app:"volume-semanal-github",version:4,exportedAt:new Date().toISOString(),muscleGroups:state.muscleGroups,workouts:state.workouts,goals:state.goals};
     const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
     const url=URL.createObjectURL(blob), a=document.createElement("a");
     a.href=url; a.download="volume-semanal-backup-"+todayISO()+".json"; a.click(); URL.revokeObjectURL(url);
@@ -420,6 +539,35 @@
       if(confirm("Excluir este treino?")){ state.workouts=state.workouts.filter(w=>w.id!==el.dataset.id); saveState(); closeModal(); render(); toast("Treino excluído."); } return;
     }
 
+    if(action==="add-library-exercise"){ openExerciseEditor(null); return; }
+    if(action==="edit-library-exercise"){ openExerciseEditor(el.dataset.id); return; }
+    if(action==="delete-library-exercise"){
+      const ex=libraryExerciseById(el.dataset.id); if(!ex)return;
+      if(confirm('Excluir "'+ex.name+'" da biblioteca? Isso não altera treinos salvos.')){
+        state.exerciseLibrary=state.exerciseLibrary.filter(x=>x.id!==ex.id); saveState(); renderSettings(); toast("Exercício removido.");
+      }
+      return;
+    }
+    if(action==="lib-add-allocation"&&draftExercise){
+      syncDraftExercise();
+      const used=new Set(draftExercise.allocations.map(a=>a.muscleGroupId));
+      const g=activeGroups().find(x=>!used.has(x.id))||activeGroups()[0];
+      draftExercise.allocations.push({id:uid(),muscleGroupId:g?g.id:"",sets:3});
+      rerenderExerciseEditorPreserveScroll(!!libraryExerciseById(draftExercise.id)); return;
+    }
+    if((action==="lib-minus"||action==="lib-plus")&&draftExercise){
+      syncDraftExercise(); const a=draftExercise.allocations.find(x=>x.id===el.dataset.id); if(!a)return;
+      a.sets=Math.max(0,clampHalf(a.sets)+(action==="lib-plus"?.5:-.5));
+      const input=document.querySelector('[data-lib-sets="'+CSS.escape(a.id)+'"]'); if(input)input.value=String(a.sets); return;
+    }
+    if(action==="lib-delete-allocation"&&draftExercise){
+      syncDraftExercise();
+      if(draftExercise.allocations.length<=1){ toast("O exercício precisa ter ao menos um grupamento."); return; }
+      draftExercise.allocations=draftExercise.allocations.filter(a=>a.id!==el.dataset.id);
+      rerenderExerciseEditorPreserveScroll(!!libraryExerciseById(draftExercise.id)); return;
+    }
+    if(action==="save-library-exercise"){ saveLibraryExercise(); return; }
+
     if(action==="move-goal"){ moveItem(state.goals,el.dataset.id,Number(el.dataset.dir)); saveState(); renderSettings(); return; }
     if(action==="move-group"){ moveItem(state.muscleGroups,el.dataset.id,Number(el.dataset.dir)); saveState(); renderSettings(); return; }
     if(action==="add-group"){
@@ -453,12 +601,27 @@
     if(t.matches("[data-group-name]")){
       const g=state.muscleGroups.find(x=>x.id===t.dataset.groupName); if(g&&t.value.trim()){g.name=t.value.trim();saveState();toast("Nome atualizado.");} return;
     }
+    if(t.matches("[data-exercise-name]")&&draftWorkout){
+      const template=libraryExerciseByName(t.value);
+      if(template&&applyExerciseTemplate(t.dataset.exerciseName,template)){
+        rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id));
+        toast(template.name+" aplicado.");
+      }
+      return;
+    }
+    if(t.matches("[data-lib-group]")&&draftExercise){
+      const a=draftExercise.allocations.find(x=>x.id===t.dataset.libGroup); if(a)a.muscleGroupId=t.value; return;
+    }
     if(t.id==="backupInput" && t.files && t.files[0]){ importBackup(t.files[0]); t.value=""; return; }
     if(draftWorkout && t.matches("[data-entry-group]")){ const x=draftWorkout.entries.find(y=>y.id===t.dataset.entryGroup); if(x)x.muscleGroupId=t.value; }
   });
 
   document.addEventListener("input",e=>{
     const t=e.target;
+    if(draftExercise){
+      if(t.id==="libraryExerciseName"){ draftExercise.name=t.value; return; }
+      if(t.matches("[data-lib-sets]")){ const a=draftExercise.allocations.find(x=>x.id===t.dataset.libSets); if(a)a.sets=clampHalf(t.value); return; }
+    }
     if(!draftWorkout) return;
     if(t.id==="draftTitle"){ draftWorkout.title=t.value; return; }
     if(t.id==="draftDate"){ draftWorkout.date=t.value; return; }
