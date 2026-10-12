@@ -60,6 +60,8 @@
   let route = getRoute();
   let draftWorkout = null;
   let draftExercise = null;
+  let settingsTab = "goals";
+  let exerciseSearch = "";
   let toastTimer = null;
 
   function clone(v){ return JSON.parse(JSON.stringify(v)); }
@@ -258,25 +260,66 @@
   function renderSettings(){
     const goals=[...state.goals].sort((a,b)=>a.order-b.order);
     const groups=[...state.muscleGroups].sort((a,b)=>a.order-b.order);
-    app.innerHTML=
-      '<section><div class="section-head"><div><h2>Metas semanais</h2><div class="tiny muted">Escolha o que aparece no painel e defina a meta.</div></div></div>'+
-      '<div class="settings-list">'+goals.map((g,i)=>
-        '<div class="setting-row"><div class="goal-config"><div><b>'+h(g.name)+'</b><div class="tiny muted">Meta semanal</div></div>'+
-        '<div class="goal-controls"><input class="target-input" inputmode="decimal" step="0.5" min="0" value="'+fmt(g.target).replace(",",".")+'" data-goal-target="'+h(g.id)+'">'+
-        '<label class="switch" title="Mostrar no painel"><input type="checkbox" data-goal-visible="'+h(g.id)+'" '+(g.visible?'checked':'')+'><span class="slider"></span></label></div></div>'+
-        '<div class="setting-line" style="margin-top:8px"><span class="tiny muted">'+(g.visible?'Visível no painel':'Oculto do painel')+'</span><div class="setting-actions"><button class="move-btn" data-action="move-goal" data-id="'+h(g.id)+'" data-dir="-1" '+(i===0?'disabled':'')+'>↑</button><button class="move-btn" data-action="move-goal" data-id="'+h(g.id)+'" data-dir="1" '+(i===goals.length-1?'disabled':'')+'>↓</button></div></div></div>'
-      ).join("")+'</div></section>'+
-      '<section class="section"><div class="section-head"><div><h2>Biblioteca de exercícios</h2><div class="tiny muted">Exercícios pré-configurados com grupamentos e volume inicial.</div></div><button class="btn small" data-action="add-library-exercise">＋ Novo</button></div>'+
-      '<div class="settings-list">'+libraryExercises().map(ex=>
-        '<div class="setting-row library-exercise-row"><div class="setting-line"><div><b>'+h(ex.name)+'</b><div class="pills">'+ex.allocations.map(a=>{const g=groupById(a.muscleGroupId);return '<span class="pill">'+h(g?g.name:"Removido")+' '+fmt(a.sets)+'</span>';}).join("")+'</div></div>'+
-        '<div class="setting-actions"><button class="move-btn library-edit-btn" data-action="edit-library-exercise" data-id="'+h(ex.id)+'">✎</button><button class="move-btn library-delete-btn" data-action="delete-library-exercise" data-id="'+h(ex.id)+'">×</button></div></div></div>'
-      ).join("")+'</div></section>'+      '<section class="section"><div class="section-head"><div><h2>Grupamentos detalhados</h2><div class="tiny muted">Usados no lançamento dos treinos.</div></div><button class="btn small" data-action="add-group">＋ Novo</button></div>'+
-      '<div class="settings-list">'+groups.map((g,i)=>
-        '<div class="setting-row"><div class="setting-line"><input class="input" style="min-height:42px" value="'+h(g.name)+'" data-group-name="'+h(g.id)+'"><label class="switch"><input type="checkbox" data-group-visible="'+h(g.id)+'" '+(!g.hidden?'checked':'')+'><span class="slider"></span></label></div>'+
-        '<div class="setting-line" style="margin-top:8px"><span class="tiny muted">'+(g.hidden?'Oculto no registro':'Disponível no registro')+'</span><div class="setting-actions"><button class="move-btn" data-action="move-group" data-id="'+h(g.id)+'" data-dir="-1" '+(i===0?'disabled':'')+'>↑</button><button class="move-btn" data-action="move-group" data-id="'+h(g.id)+'" data-dir="1" '+(i===groups.length-1?'disabled':'')+'>↓</button>'+(g.isDefault?'':'<button class="move-btn" data-action="delete-group" data-id="'+h(g.id)+'">×</button>')+'</div></div></div>'
-      ).join("")+'</div></section>'+
-      '<section class="section"><div class="section-head"><div><h2>Backup</h2><div class="tiny muted">Inclui treinos, grupamentos e metas.</div></div></div><div class="card"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button class="btn" data-action="export-backup">Exportar JSON</button><button class="btn" data-action="import-backup">Importar JSON</button></div><input id="backupInput" type="file" accept=".json,application/json" hidden></div></section>'+
-      '<section class="section"><div class="card danger-zone"><h3 style="color:#ff9191">Apagar dados</h3><p class="small muted">Remove todos os treinos e restaura as configurações padrão.</p><button class="btn danger" data-action="wipe-data">Apagar tudo</button></div></section>';
+    const allExercises=libraryExercises();
+    const filteredExercises=exerciseSearch.trim()
+      ? allExercises.filter(ex=>norm(ex.name).includes(norm(exerciseSearch)))
+      : allExercises;
+
+    const tabs=
+      '<div class="settings-tabs" role="tablist">'+
+        '<button class="settings-tab '+(settingsTab==="goals"?"active":"")+'" data-action="settings-tab" data-tab="goals"><span>◎</span><small>Metas</small></button>'+
+        '<button class="settings-tab '+(settingsTab==="exercises"?"active":"")+'" data-action="settings-tab" data-tab="exercises"><span>▤</span><small>Exercícios</small></button>'+
+        '<button class="settings-tab '+(settingsTab==="groups"?"active":"")+'" data-action="settings-tab" data-tab="groups"><span>◉</span><small>Grupamentos</small></button>'+
+        '<button class="settings-tab '+(settingsTab==="data"?"active":"")+'" data-action="settings-tab" data-tab="data"><span>↕</span><small>Dados</small></button>'+
+      '</div>';
+
+    let body="";
+
+    if(settingsTab==="goals"){
+      const visibleCount=goals.filter(g=>g.visible).length;
+      body=
+        '<section class="settings-panel"><div class="settings-panel-head"><div><div class="eyebrow">PAINEL SEMANAL</div><h2>Metas</h2><div class="small muted">'+visibleCount+' de '+goals.length+' grupamentos aparecem no painel.</div></div></div>'+
+        '<div class="settings-list">'+goals.map((g,i)=>
+          '<div class="setting-row"><div class="goal-config"><div><b>'+h(g.name)+'</b><div class="tiny muted">Meta semanal</div></div>'+
+          '<div class="goal-controls"><input class="target-input" inputmode="decimal" step="0.5" min="0" value="'+fmt(g.target).replace(",",".")+'" data-goal-target="'+h(g.id)+'">'+
+          '<label class="switch" title="Mostrar no painel"><input type="checkbox" data-goal-visible="'+h(g.id)+'" '+(g.visible?'checked':'')+'><span class="slider"></span></label></div></div>'+
+          '<div class="setting-line setting-row-footer"><span class="tiny muted">'+(g.visible?'Visível no painel':'Oculto do painel')+'</span><div class="setting-actions"><button class="move-btn" data-action="move-goal" data-id="'+h(g.id)+'" data-dir="-1" '+(i===0?'disabled':'')+'>↑</button><button class="move-btn" data-action="move-goal" data-id="'+h(g.id)+'" data-dir="1" '+(i===goals.length-1?'disabled':'')+'>↓</button></div></div></div>'
+        ).join("")+'</div></section>';
+    }
+
+    if(settingsTab==="exercises"){
+      body=
+        '<section class="settings-panel"><div class="settings-panel-head"><div><div class="eyebrow">BIBLIOTECA</div><h2>Exercícios</h2><div class="small muted">'+allExercises.length+' exercícios cadastrados.</div></div><button class="btn primary compact-btn" data-action="add-library-exercise">＋ Novo</button></div>'+
+        '<div class="exercise-search-wrap"><input class="input" id="exerciseLibrarySearch" type="search" placeholder="Buscar exercício..." value="'+h(exerciseSearch)+'"><span class="exercise-search-count">'+filteredExercises.length+'</span></div>'+
+        (filteredExercises.length
+          ? '<div class="settings-list exercise-settings-list">'+filteredExercises.map(ex=>
+              '<div class="setting-row library-exercise-row"><div class="setting-line"><div class="library-exercise-main"><b>'+h(ex.name)+'</b><div class="pills">'+ex.allocations.map(a=>{const g=groupById(a.muscleGroupId);return '<span class="pill">'+h(g?g.name:"Removido")+' '+fmt(a.sets)+'</span>';}).join("")+'</div></div>'+
+              '<div class="setting-actions"><button class="move-btn library-edit-btn" data-action="edit-library-exercise" data-id="'+h(ex.id)+'" aria-label="Editar exercício">✎</button><button class="move-btn library-delete-btn" data-action="delete-library-exercise" data-id="'+h(ex.id)+'" aria-label="Excluir exercício">×</button></div></div></div>'
+            ).join("")+'</div>'
+          : '<div class="card empty">Nenhum exercício encontrado.</div>')+
+        '</section>';
+    }
+
+    if(settingsTab==="groups"){
+      body=
+        '<section class="settings-panel"><div class="settings-panel-head"><div><div class="eyebrow">CADASTRO</div><h2>Grupamentos</h2><div class="small muted">Controle os grupamentos disponíveis ao registrar uma série.</div></div><button class="btn primary compact-btn" data-action="add-group">＋ Novo</button></div>'+
+        '<div class="settings-list">'+groups.map((g,i)=>
+          '<div class="setting-row"><div class="setting-line"><input class="input group-name-input" value="'+h(g.name)+'" data-group-name="'+h(g.id)+'"><label class="switch"><input type="checkbox" data-group-visible="'+h(g.id)+'" '+(!g.hidden?'checked':'')+'><span class="slider"></span></label></div>'+
+          '<div class="setting-line setting-row-footer"><span class="tiny muted">'+(g.hidden?'Oculto no registro':'Disponível no registro')+'</span><div class="setting-actions"><button class="move-btn" data-action="move-group" data-id="'+h(g.id)+'" data-dir="-1" '+(i===0?'disabled':'')+'>↑</button><button class="move-btn" data-action="move-group" data-id="'+h(g.id)+'" data-dir="1" '+(i===groups.length-1?'disabled':'')+'>↓</button>'+(g.isDefault?'':'<button class="move-btn library-delete-btn" data-action="delete-group" data-id="'+h(g.id)+'">×</button>')+'</div></div></div>'
+        ).join("")+'</div></section>';
+    }
+
+    if(settingsTab==="data"){
+      body=
+        '<section class="settings-panel"><div class="settings-panel-head"><div><div class="eyebrow">SEGURANÇA</div><h2>Dados e backup</h2><div class="small muted">Faça backup antes de mudanças grandes ou troca de aparelho.</div></div></div>'+
+        '<div class="data-actions-grid"><button class="data-action-card" data-action="export-backup"><span class="data-action-icon">↓</span><div><b>Exportar backup</b><small>Baixar todos os treinos, metas e biblioteca em JSON.</small></div></button>'+
+        '<button class="data-action-card" data-action="import-backup"><span class="data-action-icon">↑</span><div><b>Importar backup</b><small>Restaurar um arquivo JSON salvo anteriormente.</small></div></button></div>'+
+        '<input id="backupInput" type="file" accept=".json,application/json" hidden>'+
+        '<div class="card danger-zone data-danger"><div><h3>Apagar todos os dados</h3><p class="small muted">Remove treinos, histórico e configurações locais deste aparelho.</p></div><button class="btn danger" data-action="wipe-data">Apagar tudo</button></div>'+
+        '</section>';
+    }
+
+    app.innerHTML=tabs+body;
   }
 
   function openWorkout(id,date){
@@ -479,6 +522,12 @@
     const el=e.target.closest("[data-action]"); if(!el) return;
     const action=el.dataset.action;
 
+    if(action==="settings-tab"){
+      settingsTab=el.dataset.tab||"goals";
+      renderSettings();
+      window.scrollTo(0,0);
+      return;
+    }
     if(action==="new-workout"){ openWorkout(null,el.dataset.date||todayISO()); return; }
     if(action==="edit-workout"){ openWorkout(el.dataset.id); return; }
     if(action==="close-modal"){ closeModal(); return; }
@@ -618,6 +667,14 @@
 
   document.addEventListener("input",e=>{
     const t=e.target;
+    if(t.id==="exerciseLibrarySearch"){
+      exerciseSearch=t.value;
+      const cursor=t.selectionStart;
+      renderSettings();
+      const next=document.getElementById("exerciseLibrarySearch");
+      if(next){ next.focus(); if(cursor!=null) next.setSelectionRange(cursor,cursor); }
+      return;
+    }
     if(draftExercise){
       if(t.id==="libraryExerciseName"){ draftExercise.name=t.value; return; }
       if(t.matches("[data-lib-sets]")){ const a=draftExercise.allocations.find(x=>x.id===t.dataset.libSets); if(a)a.sets=clampHalf(t.value); return; }
