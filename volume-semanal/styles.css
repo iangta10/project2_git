@@ -78,3 +78,11 @@ hr{border:0;border-top:1px solid var(--border);margin:18px 0}
   .allocation-remove{width:34px;height:40px}
   .allocation-group,.allocation-sets{min-height:40px}
 }
+
+/* Exercise library */
+.library-exercise-row .setting-line{align-items:flex-start}
+.library-exercise-row .pills{margin-top:8px}
+.library-exercise-row .setting-actions{flex-shrink:0}
+.library-edit-btn{color:var(--accent)}
+.library-delete-btn{color:#ff9191}
+.exercise-name-input{position:relative}
