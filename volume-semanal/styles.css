@@ -119,3 +119,17 @@ hr{border:0;border-top:1px solid var(--border);margin:18px 0}
   .data-danger{display:grid}
   .data-danger .btn{width:100%}
 }
+
+/* Exercise autocomplete */
+.exercise-picker{position:relative;z-index:2}
+.exercise-name-input{padding-right:48px}
+.exercise-picker-toggle{position:absolute;right:4px;top:4px;width:38px;height:38px;border:0;border-radius:10px;background:var(--panel2);color:var(--muted);font-size:22px;display:grid;place-items:center;cursor:pointer}
+.exercise-picker-toggle:active{background:var(--accent-soft);color:var(--accent)}
+.exercise-suggestions{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:40;max-height:280px;overflow:auto;background:#18181b;border:1px solid var(--border);border-radius:14px;padding:6px;box-shadow:0 18px 40px rgba(0,0,0,.45);overscroll-behavior:contain}
+.exercise-suggestions.open{display:block}
+.exercise-suggestion{width:100%;border:0;background:transparent;color:var(--text);text-align:left;border-radius:10px;padding:10px 11px;display:grid;gap:3px;cursor:pointer}
+.exercise-suggestion+.exercise-suggestion{border-top:1px solid rgba(255,255,255,.04)}
+.exercise-suggestion:active,.exercise-suggestion:hover{background:var(--accent-soft)}
+.exercise-suggestion-name{font-weight:800;font-size:14px}
+.exercise-suggestion-muscles{font-size:11px;color:var(--muted);white-space:normal;line-height:1.35}
+.exercise-suggestion-empty{padding:13px 11px;color:var(--muted);font-size:12px;line-height:1.4}
