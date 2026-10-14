@@ -60,6 +60,7 @@
   let route = getRoute();
   let draftWorkout = null;
   let draftExercise = null;
+  let quickExerciseKey = null;
   let settingsTab = "goals";
   let exerciseSearch = "";
   let toastTimer = null;
@@ -409,18 +410,24 @@
     const box=document.querySelector('[data-exercise-suggestions="'+CSS.escape(exerciseKey)+'"]');
     if(!box) return;
     hideExerciseSuggestions(exerciseKey);
-    const matches=exerciseSuggestions(query);
-    if(!matches.length){
-      box.innerHTML='<div class="exercise-suggestion-empty">Nenhum exercício encontrado. Você ainda pode usar o nome digitado.</div>';
-      box.classList.add("open");
-      return;
-    }
-    box.innerHTML=matches.map(ex=>
+    const typed=String(query||"").trim();
+    const matches=exerciseSuggestions(typed);
+    const exact=typed&&libraryExerciseByName(typed);
+    let html=matches.map(ex=>
       '<button type="button" class="exercise-suggestion" data-action="select-library-exercise" data-key="'+h(exerciseKey)+'" data-exercise-id="'+h(ex.id)+'">'+
         '<span class="exercise-suggestion-name">'+h(ex.name)+'</span>'+
         '<span class="exercise-suggestion-muscles">'+ex.allocations.map(a=>{const g=groupById(a.muscleGroupId);return h(g?g.name:"");}).filter(Boolean).join(" · ")+'</span>'+
       '</button>'
     ).join("");
+
+    if(typed&&!exact){
+      html+='<button type="button" class="exercise-suggestion create-exercise-suggestion" data-action="create-exercise-from-workout" data-key="'+h(exerciseKey)+'">'+
+        '<span class="create-exercise-icon">＋</span><span><span class="exercise-suggestion-name">Criar “'+h(typed)+'”</span>'+
+        '<span class="exercise-suggestion-muscles">Adicionar à biblioteca ou usar apenas neste treino</span></span></button>';
+    }
+
+    if(!html) html='<div class="exercise-suggestion-empty">Comece a digitar para buscar um exercício.</div>';
+    box.innerHTML=html;
     box.classList.add("open");
   }
 
@@ -468,7 +475,7 @@
     saveState(); closeModal(); render(); toast("Treino salvo.");
   }
 
-  function closeModal(){ modalRoot.innerHTML=""; draftWorkout=null; draftExercise=null; }
+  function closeModal(){ modalRoot.innerHTML=""; draftWorkout=null; draftExercise=null; quickExerciseKey=null; }
 
   function libraryAllocationHtml(a){
     const groups=activeGroups();
@@ -480,7 +487,93 @@
       '<button class="allocation-remove" data-action="lib-delete-allocation" data-id="'+h(a.id)+'">×</button></div>';
   }
 
+  function openQuickExerciseCreator(exerciseKey,name){
+    if(!draftWorkout) return;
+    syncDraftInputs();
+    const block=exerciseBlocks(draftWorkout).find(b=>b.key===exerciseKey);
+    if(!block) return;
+    quickExerciseKey=exerciseKey;
+    draftExercise={
+      id:uid(),
+      name:String(name||block.exerciseName||"").trim(),
+      order:(state.exerciseLibrary||[]).length,
+      allocations:block.entries.map(e=>({id:uid(),muscleGroupId:e.muscleGroupId,sets:clampHalf(e.sets)}))
+    };
+    if(!draftExercise.allocations.length){
+      const first=activeGroups()[0];
+      draftExercise.allocations=[{id:uid(),muscleGroupId:first?first.id:"",sets:3}];
+    }
+    hideExerciseSuggestions();
+    renderQuickExerciseCreator();
+  }
+
+  function renderQuickExerciseCreator(){
+    const old=document.getElementById("quickExerciseCreator");
+    if(old) old.remove();
+    modalRoot.insertAdjacentHTML("beforeend",
+      '<div class="quick-exercise-backdrop" id="quickExerciseCreator"><div class="quick-exercise-modal">'+
+        '<div class="modal-head"><div><div class="eyebrow">NOVO EXERCÍCIO</div><h2>'+h(draftExercise.name||"Exercício")+'</h2></div><button class="close-btn" data-action="quick-exercise-close">×</button></div>'+
+        '<div class="field"><label>Nome do exercício</label><input class="input" id="libraryExerciseName" placeholder="Ex.: Pullover na polia" value="'+h(draftExercise.name||"")+'"></div>'+
+        '<div class="quick-create-info"><b>Defina o padrão</b><span>Escolha quais grupamentos esse exercício trabalha e quanto volume ele deve sugerir inicialmente.</span></div>'+
+        '<div>'+draftExercise.allocations.map(libraryAllocationHtml).join("")+'</div>'+
+        '<button class="btn" style="width:100%" data-action="lib-add-allocation">＋ Adicionar grupamento</button>'+
+        '<div class="quick-create-actions">'+
+          '<button class="btn" data-action="quick-exercise-use-once">Usar só neste treino</button>'+
+          '<button class="btn primary" data-action="quick-exercise-save-use">Salvar e usar no treino</button>'+
+        '</div>'+
+      '</div></div>'
+    );
+  }
+
+  function rerenderQuickExerciseCreatorPreserveScroll(){
+    const current=document.querySelector("#quickExerciseCreator .quick-exercise-modal");
+    const top=current?current.scrollTop:0;
+    renderQuickExerciseCreator();
+    const next=document.querySelector("#quickExerciseCreator .quick-exercise-modal");
+    if(next) next.scrollTop=top;
+  }
+
+  function closeQuickExerciseCreator(){
+    const quick=document.getElementById("quickExerciseCreator");
+    if(quick) quick.remove();
+    draftExercise=null;
+    quickExerciseKey=null;
+  }
+
+  function useQuickExercise(saveToLibrary){
+    if(!draftWorkout||!draftExercise||!quickExerciseKey) return;
+    syncDraftExercise();
+    const name=String(draftExercise.name||"").trim();
+    const allocations=draftExercise.allocations
+      .filter(a=>a.muscleGroupId&&clampHalf(a.sets)>0)
+      .map(a=>({muscleGroupId:a.muscleGroupId,sets:clampHalf(a.sets)}));
+    if(!name){ toast("Digite o nome do exercício."); return; }
+    if(!allocations.length){ toast("Adicione ao menos um grupamento."); return; }
+
+    if(saveToLibrary){
+      const duplicate=(state.exerciseLibrary||[]).find(e=>norm(e.name)===norm(name));
+      if(duplicate){ toast("Esse exercício já existe na biblioteca."); return; }
+      state.exerciseLibrary.push({
+        id:draftExercise.id||uid(),
+        name:name,
+        order:(state.exerciseLibrary||[]).length,
+        allocations:clone(allocations)
+      });
+      saveState();
+    }
+
+    const key=quickExerciseKey;
+    const template={name:name,allocations:allocations};
+    const applied=applyExerciseTemplate(key,template);
+    closeQuickExerciseCreator();
+    if(applied){
+      rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id));
+      toast(saveToLibrary?"Exercício salvo e aplicado.":"Exercício aplicado só neste treino.");
+    }
+  }
+
   function openExerciseEditor(id){
+    quickExerciseKey=null;
     const existing=id?libraryExerciseById(id):null, first=activeGroups()[0];
     draftExercise=existing?{
       id:existing.id,name:existing.name,order:existing.order,
@@ -546,7 +639,7 @@
   }
 
   function exportBackup(){
-    const data={app:"volume-semanal-github",version:4,exportedAt:new Date().toISOString(),muscleGroups:state.muscleGroups,workouts:state.workouts,goals:state.goals};
+    const data={app:"volume-semanal-github",version:4,exportedAt:new Date().toISOString(),muscleGroups:state.muscleGroups,workouts:state.workouts,goals:state.goals,exerciseLibrary:state.exerciseLibrary};
     const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
     const url=URL.createObjectURL(blob), a=document.createElement("a");
     a.href=url; a.download="volume-semanal-backup-"+todayISO()+".json"; a.click(); URL.revokeObjectURL(url);
@@ -576,6 +669,27 @@
       }
       return;
     }
+    if(action==="create-exercise-from-workout"&&draftWorkout){
+      const key=el.dataset.key;
+      const input=document.querySelector('[data-exercise-name="'+CSS.escape(key)+'"]');
+      const name=input?input.value.trim():"";
+      if(!name){ toast("Digite o nome do exercício."); return; }
+      openQuickExerciseCreator(key,name);
+      return;
+    }
+    if(action==="quick-exercise-close"){
+      closeQuickExerciseCreator();
+      return;
+    }
+    if(action==="quick-exercise-use-once"){
+      useQuickExercise(false);
+      return;
+    }
+    if(action==="quick-exercise-save-use"){
+      useQuickExercise(true);
+      return;
+    }
+
     if(action==="select-library-exercise"&&draftWorkout){
       const template=libraryExerciseById(el.dataset.exerciseId);
       const key=el.dataset.key;
@@ -667,7 +781,9 @@
       const used=new Set(draftExercise.allocations.map(a=>a.muscleGroupId));
       const g=activeGroups().find(x=>!used.has(x.id))||activeGroups()[0];
       draftExercise.allocations.push({id:uid(),muscleGroupId:g?g.id:"",sets:3});
-      rerenderExerciseEditorPreserveScroll(!!libraryExerciseById(draftExercise.id)); return;
+      if(quickExerciseKey) rerenderQuickExerciseCreatorPreserveScroll();
+      else rerenderExerciseEditorPreserveScroll(!!libraryExerciseById(draftExercise.id));
+      return;
     }
     if((action==="lib-minus"||action==="lib-plus")&&draftExercise){
       syncDraftExercise(); const a=draftExercise.allocations.find(x=>x.id===el.dataset.id); if(!a)return;
@@ -678,7 +794,9 @@
       syncDraftExercise();
       if(draftExercise.allocations.length<=1){ toast("O exercício precisa ter ao menos um grupamento."); return; }
       draftExercise.allocations=draftExercise.allocations.filter(a=>a.id!==el.dataset.id);
-      rerenderExerciseEditorPreserveScroll(!!libraryExerciseById(draftExercise.id)); return;
+      if(quickExerciseKey) rerenderQuickExerciseCreatorPreserveScroll();
+      else rerenderExerciseEditorPreserveScroll(!!libraryExerciseById(draftExercise.id));
+      return;
     }
     if(action==="save-library-exercise"){ saveLibraryExercise(); return; }
 
