@@ -118,7 +118,7 @@
         const entryId=String(e.id||uid());
         return {
           id:entryId,exerciseKey:String(e.exerciseKey||entryId),exerciseName:e.exerciseName?String(e.exerciseName):"",
-          muscleGroupId:String(e.muscleGroupId||""),sets:clampHalf(e.sets)
+          muscleGroupId:String(e.muscleGroupId||""),sets:clampHalf(e.sets),completed:!!e.completed
         };
       }).filter(e=>e.muscleGroupId&&e.sets>0):[],
       createdAt:w.createdAt||new Date().toISOString(),updatedAt:w.updatedAt||new Date().toISOString()
@@ -177,7 +177,10 @@
       if(!map.has(key)) map.set(key,{key:key,exerciseName:e.exerciseName||"",entries:[]});
       map.get(key).entries.push(e);
     });
-    return [...map.values()];
+    return [...map.values()].map(block=>({
+      ...block,
+      completed:block.entries.length>0&&block.entries.every(e=>!!e.completed)
+    }));
   }
   function totalSets(list){ return list.reduce((s,w)=>s+workoutTotal(w),0); }
   function goalTotal(goal,list){
@@ -328,7 +331,7 @@
     const first=activeGroups()[0];
     draftWorkout=existing?clone(existing):{
       id:uid(),date:date||todayISO(),title:"",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
-      entries:(()=>{ const key=uid(); return [{id:uid(),exerciseKey:key,exerciseName:"",muscleGroupId:first?first.id:"",sets:3}]; })()
+      entries:(()=>{ const key=uid(); return [{id:uid(),exerciseKey:key,exerciseName:"",muscleGroupId:first?first.id:"",sets:3,completed:false}]; })()
     };
     renderWorkoutModal(!!existing);
   }
@@ -345,7 +348,8 @@
   }
 
   function entryHtml(block){
-    return '<div class="entry-card" data-exercise-key="'+h(block.key)+'">'+
+    return '<div class="entry-card '+(block.completed?'exercise-completed':'')+'" data-exercise-key="'+h(block.key)+'">'+
+      '<label class="exercise-complete-row"><input type="checkbox" data-action="toggle-exercise-complete" data-key="'+h(block.key)+'" '+(block.completed?'checked':'')+'><span class="exercise-checkmark"></span><span class="exercise-complete-text">'+(block.completed?'Executado':'Marcar como executado')+'</span></label>'+
       '<div class="exercise-picker">'+
         '<input class="input exercise-name-input" placeholder="Digite ou escolha um exercício" autocomplete="off" autocapitalize="sentences" value="'+h(block.exerciseName||"")+'" data-exercise-name="'+h(block.key)+'">'+
         '<button class="exercise-picker-toggle" type="button" data-action="toggle-exercise-suggestions" data-key="'+h(block.key)+'" aria-label="Mostrar exercícios">⌄</button>'+
@@ -437,8 +441,9 @@
     const indices=[];
     draftWorkout.entries.forEach((e,i)=>{ if((e.exerciseKey||e.id)===exerciseKey) indices.push(i); });
     if(!indices.length) return false;
+    const wasCompleted=indices.every(i=>!!draftWorkout.entries[i].completed);
     const fresh=(template.allocations||[]).filter(a=>groupById(a.muscleGroupId)&&clampHalf(a.sets)>0).map(a=>({
-      id:uid(),exerciseKey:exerciseKey,exerciseName:template.name,muscleGroupId:a.muscleGroupId,sets:clampHalf(a.sets)
+      id:uid(),exerciseKey:exerciseKey,exerciseName:template.name,muscleGroupId:a.muscleGroupId,sets:clampHalf(a.sets),completed:wasCompleted
     }));
     if(!fresh.length) return false;
     draftWorkout.entries.splice(indices[0],indices.length,...fresh);
@@ -715,7 +720,7 @@
 
     if(action==="add-entry" && draftWorkout){
       syncDraftInputs(); const g=activeGroups()[0], key=uid();
-      draftWorkout.entries.push({id:uid(),exerciseKey:key,exerciseName:"",muscleGroupId:g?g.id:"",sets:3});
+      draftWorkout.entries.push({id:uid(),exerciseKey:key,exerciseName:"",muscleGroupId:g?g.id:"",sets:3,completed:false});
       rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id)); return;
     }
 
@@ -726,7 +731,7 @@
       const used=new Set(block.entries.map(x=>x.muscleGroupId));
       const group=activeGroups().find(g=>!used.has(g.id))||activeGroups()[0];
       const name=block.exerciseName||"";
-      draftWorkout.entries.push({id:uid(),exerciseKey:key,exerciseName:name,muscleGroupId:group?group.id:"",sets:3});
+      draftWorkout.entries.push({id:uid(),exerciseKey:key,exerciseName:name,muscleGroupId:group?group.id:"",sets:3,completed:block.entries.every(x=>!!x.completed)});
       rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id)); return;
     }
 
@@ -738,6 +743,19 @@
       if(same.length<=1){ toast("O exercício precisa ter ao menos um grupamento."); return; }
       draftWorkout.entries=draftWorkout.entries.filter(x=>x.id!==el.dataset.id);
       rerenderWorkoutModalPreserveScroll(state.workouts.some(w=>w.id===draftWorkout.id)); return;
+    }
+
+    if(action==="toggle-exercise-complete"&&draftWorkout){
+      const key=el.dataset.key;
+      const entries=draftWorkout.entries.filter(e=>(e.exerciseKey||e.id)===key);
+      if(!entries.length) return;
+      const completed=!!el.checked;
+      entries.forEach(e=>e.completed=completed);
+      const card=el.closest(".entry-card");
+      if(card) card.classList.toggle("exercise-completed",completed);
+      const text=card?card.querySelector(".exercise-complete-text"):null;
+      if(text) text.textContent=completed?"Executado":"Marcar como executado";
+      return;
     }
 
     if((action==="entry-minus"||action==="entry-plus")&&draftWorkout){
@@ -756,7 +774,7 @@
       const block=exerciseBlocks(draftWorkout).find(b=>b.key===key); if(!block)return;
       if(action==="entry-duplicate"){
         const newKey=uid();
-        const copies=block.entries.map(e=>({...clone(e),id:uid(),exerciseKey:newKey}));
+        const copies=block.entries.map(e=>({...clone(e),id:uid(),exerciseKey:newKey,completed:false}));
         draftWorkout.entries.push(...copies);
       }
       if(action==="entry-delete") draftWorkout.entries=draftWorkout.entries.filter(e=>(e.exerciseKey||e.id)!==key);
